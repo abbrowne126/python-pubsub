@@ -62,14 +62,22 @@ _LOGGER = logging.getLogger(__name__)
 _REGULAR_SHUTDOWN_THREAD_NAME = "Thread-RegularStreamShutdown"
 _RPC_ERROR_THREAD_NAME = "Thread-OnRpcTerminated"
 _RETRYABLE_STREAM_ERRORS = (
-    exceptions.DeadlineExceeded,
-    exceptions.ServiceUnavailable,
-    exceptions.InternalServerError,
-    exceptions.Unknown,
-    exceptions.GatewayTimeout,
     exceptions.Aborted,
+    exceptions.Cancelled,
+    exceptions.DeadlineExceeded,
+    exceptions.InternalServerError,
+    exceptions.ResourceExhausted,
+    exceptions.ServiceUnavailable,
+    exceptions.Unknown,
 )
-_TERMINATING_STREAM_ERRORS = (exceptions.Cancelled,)
+_TERMINATING_STREAM_ERRORS = (
+    exceptions.InvalidArgument,
+    exceptions.PermissionDenied,
+    exceptions.NotFound,
+    exceptions.FailedPrecondition,
+    exceptions.Unauthenticated,
+    exceptions.Unauthorized,
+)
 _MAX_LOAD = 1.0
 """The load threshold above which to pause the incoming message stream."""
 
@@ -1261,11 +1269,10 @@ class StreamingPullManager(object):
             in a list of retryable / idempotent exceptions.
         """
         exception = _wrap_as_exception(exception)
-        # If this is in the list of idempotent exceptions, then we want to
-        # recover.
         if isinstance(exception, _RETRYABLE_STREAM_ERRORS):
             _LOGGER.debug("Observed recoverable stream error %s", exception)
             return True
+
         _LOGGER.debug("Observed non-recoverable stream error %s", exception)
         return False
 
@@ -1283,7 +1290,8 @@ class StreamingPullManager(object):
             in a list of terminating exceptions.
         """
         exception = _wrap_as_exception(exception)
-        if isinstance(exception, _TERMINATING_STREAM_ERRORS):
+        # We should not retry non-grpc errors
+        if not isinstance(exception, grpc.RpcError) or isinstance(exception, _TERMINATING_STREAM_ERRORS):
             _LOGGER.debug("Observed terminating stream error %s", exception)
             return True
         _LOGGER.debug("Observed non-terminating stream error %s", exception)
